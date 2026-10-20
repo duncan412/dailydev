@@ -152,17 +152,25 @@ final class DailyDevTui
 
             $this->content->add($callbackInput);
             $this->tui->setFocus($callbackInput);
-            $this->setStatus('Opening daily.dev authorization in your browser…');
-
-            $this->tui->onTick(function (): bool {
-                $this->tui->onTick(null);
-                $this->openAuthorizationPage();
-
-                return false;
-            });
         } else {
             $this->setStatus('Complete the OAuth setup above, then restart the TUI. Ctrl+C or Ctrl+D to quit.');
         }
+
+        $authorizationUrl = $this->authorization?->authorizationUrl ?? 'https://daily.dev/settings/api';
+        $browserOpenedStatus = $this->authorization === null
+            ? 'Browser opened. Create an OAuth app in daily.dev, then add its credentials to .env.local.'
+            : 'Browser opened. Authorize the app, then paste the full redirect URL below.';
+
+        $this->setStatus($this->authorization === null
+            ? 'Opening daily.dev API settings in your browser…'
+            : 'Opening daily.dev authorization in your browser…');
+
+        $this->tui->onTick(function () use ($authorizationUrl, $browserOpenedStatus): bool {
+            $this->tui->onTick(null);
+            $this->openBrowser($authorizationUrl, $browserOpenedStatus);
+
+            return false;
+        });
     }
 
     private function showReader(): void
@@ -326,12 +334,8 @@ final class DailyDevTui
         }
     }
 
-    private function openAuthorizationPage(): void
+    private function openBrowser(string $url, string $successStatus): void
     {
-        if ($this->authorization === null) {
-            return;
-        }
-
         $command = match (PHP_OS_FAMILY) {
             'Darwin' => 'open',
             'Linux' => 'xdg-open',
@@ -340,12 +344,12 @@ final class DailyDevTui
         $executable = $command === null ? null : (new ExecutableFinder())->find($command);
 
         if ($executable === null) {
-            $this->setStatus('Could not detect a browser launcher. Open the authorization URL shown above.');
+            $this->setStatus('Could not detect a browser launcher. Open the URL shown above.');
 
             return;
         }
 
-        $process = new Process([$executable, $this->authorization->authorizationUrl]);
+        $process = new Process([$executable, $url]);
         $process->setTimeout(5);
 
         try {
@@ -357,12 +361,12 @@ final class DailyDevTui
         }
 
         if ($exitCode !== 0) {
-            $this->setStatus('Could not open your browser. Open the authorization URL shown above.');
+            $this->setStatus('Could not open your browser. Open the URL shown above.');
 
             return;
         }
 
-        $this->setStatus('Browser opened. Authorize the app, then paste the full redirect URL below.');
+        $this->setStatus($successStatus);
     }
 
     private function loadNextPage(): void
