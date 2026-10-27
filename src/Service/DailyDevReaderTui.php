@@ -141,9 +141,10 @@ final class DailyDevReaderTui
                 throw new DailyDevApiException('The daily.dev post response was missing post details.', 200);
             }
 
-            $this->selectedPost = array_merge($this->findPost($postId) ?? [], $details);
-            $this->replacePost($this->selectedPost);
-            $this->renderPost($this->selectedPost, detailed: true);
+            $post = array_merge($this->findPost($postId) ?? [], $details);
+            $this->selectedPost = $post;
+            $this->replacePost($post);
+            $this->renderPost($post, detailed: true);
             $this->setStatus('Post opened · b bookmark · u unbookmark · ↑/↓ scroll the feed · q/Ctrl+C quit');
         } catch (\RuntimeException $exception) {
             $this->setStatus($exception->getMessage());
@@ -159,16 +160,18 @@ final class DailyDevReaderTui
             return;
         }
 
-        if (!is_bool($this->selectedPost['bookmarked'] ?? null)) {
+        $post = $this->selectedPost;
+        if (!is_bool($post['bookmarked'] ?? null)) {
             $this->loadPostDetails($postId);
-            if (!is_bool($this->selectedPost['bookmarked'] ?? null)) {
+            $post = $this->selectedPost;
+            if (!is_array($post) || !is_bool($post['bookmarked'] ?? null)) {
                 $this->setStatus('Could not determine whether this post is bookmarked. Press Enter to retry loading it.');
 
                 return;
             }
         }
 
-        if ($this->selectedPost['bookmarked'] === $bookmark) {
+        if ($post['bookmarked'] === $bookmark) {
             $this->setStatus($bookmark ? 'This post is already bookmarked.' : 'This post is not bookmarked.');
 
             return;
@@ -181,9 +184,10 @@ final class DailyDevReaderTui
                 $this->apiClient->unbookmark($postId);
             }
 
-            $this->selectedPost['bookmarked'] = $bookmark;
-            $this->replacePost($this->selectedPost);
-            $this->renderPost($this->selectedPost, detailed: true);
+            $post['bookmarked'] = $bookmark;
+            $this->selectedPost = $post;
+            $this->replacePost($post);
+            $this->renderPost($post, detailed: true);
             $this->setStatus($bookmark ? 'Post bookmarked.' : 'Bookmark removed.');
         } catch (\RuntimeException $exception) {
             $this->setStatus($exception->getMessage());
@@ -241,10 +245,14 @@ final class DailyDevReaderTui
     {
         $items = [];
         foreach ($this->posts as $post) {
+            if (!is_string($post['id'] ?? null) || !is_string($post['title'] ?? null)) {
+                continue;
+            }
+
             $source = is_array($post['source'] ?? null) ? ($post['source']['name'] ?? '') : '';
             $items[] = [
-                'value' => (string) $post['id'],
-                'label' => $this->safeText((string) $post['title']),
+                'value' => $post['id'],
+                'label' => $this->safeText($post['title']),
                 'description' => $this->safeText(is_string($source) ? $source : ''),
             ];
         }
@@ -268,6 +276,9 @@ final class DailyDevReaderTui
         }
     }
 
+    /**
+     * @param array<string, mixed> $updatedPost
+     */
     private function replacePost(array $updatedPost): void
     {
         foreach ($this->posts as $index => $post) {
@@ -280,6 +291,9 @@ final class DailyDevReaderTui
         $this->updatePostList();
     }
 
+    /**
+     * @param array<string, mixed> $post
+     */
     private function renderPost(array $post, bool $detailed): void
     {
         $source = is_array($post['source'] ?? null) ? ($post['source']['name'] ?? '') : '';

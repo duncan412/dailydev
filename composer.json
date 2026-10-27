@@ -49,6 +49,8 @@
         "symfony/polyfill-php84": "*"
     },
     "scripts": {
+        "test": "php bin/phpunit",
+        "analyse": "phpstan analyse --no-progress",
         "auto-scripts": {
             "cache:clear": "symfony-cmd",
             "assets:install %PUBLIC_DIR%": "symfony-cmd"
@@ -70,6 +72,7 @@
         }
     },
     "require-dev": {
+        "phpstan/phpstan": "^2.3.2",
         "phpunit/phpunit": "^13.4",
         "symfony/browser-kit": "8.1.*",
         "symfony/css-selector": "8.1.*"

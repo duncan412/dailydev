@@ -102,8 +102,6 @@ final class DailyDevApiClient
     }
 
     /**
-     * @param 'ALL'|'UNREAD'|'READ'|'ARCHIVED' $status
-     *
      * @return array<string, mixed>
      */
     public function bookmarks(
@@ -128,13 +126,13 @@ final class DailyDevApiClient
     }
 
     /**
-     * @param non-empty-list<string> $postIds
+     * @param list<string> $postIds
      *
      * @return array<string, mixed>
      */
     public function bookmark(array $postIds, ?string $listId = null): array
     {
-        if (count($postIds) < 1 || count($postIds) > 100) {
+        if ($postIds === [] || count($postIds) > 100) {
             throw new \InvalidArgumentException('Bookmarking requires between 1 and 100 post IDs.');
         }
 
@@ -142,7 +140,7 @@ final class DailyDevApiClient
             $this->assertPathSegment($postId, 'post ID');
         }
 
-        $body = ['postIds' => array_values($postIds)];
+        $body = ['postIds' => $postIds];
         if ($listId !== null) {
             $this->assertPathSegment($listId, 'bookmark list ID');
             $body['listId'] = $listId;
@@ -217,11 +215,16 @@ final class DailyDevApiClient
             throw new DailyDevApiException($message, $statusCode, $retryAfter);
         }
 
-        if (!is_array($data)) {
-            throw new DailyDevApiException('The daily.dev API returned an unexpected response.', $statusCode);
+        $responseData = [];
+        foreach ($data as $key => $value) {
+            if (!is_string($key)) {
+                throw new DailyDevApiException('The daily.dev API returned an unexpected response.', $statusCode);
+            }
+
+            $responseData[$key] = $value;
         }
 
-        return $data;
+        return $responseData;
     }
 
     /**

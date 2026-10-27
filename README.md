@@ -27,3 +27,7 @@ Use ↑/↓ to scroll the feed, Enter to open the selected post's details, `b` t
 `DailyDevApiClient` exposes `forYou()`, `popular()`, `discussed()`, `byTag()`, `bySource()`, `post()`, `bookmarks()`, `bookmark()` and `unbookmark()`. Feed and bookmark list methods return the API response, including its pagination cursor.
 
 The Public API specification does not include an endpoint for reposting to squads. Post detail also does not return full article text for regular articles; it provides post metadata and a URL.
+
+## Development checks
+
+Run the PHPUnit suite with `composer test` and analyze the application at PHPStan level 9 with `composer analyse`.
