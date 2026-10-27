@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\Exception\DecodingExceptionInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -14,7 +15,8 @@ final class DailyDevApiClient
 
     public function __construct(
         private readonly HttpClientInterface $httpClient,
-        private readonly DailyDevOAuthFlow $oauthFlow,
+        #[Autowire('%env(DD_TOKEN)%')]
+        private readonly string $personalAccessToken,
     ) {
     }
 
@@ -146,13 +148,13 @@ final class DailyDevApiClient
             $body['listId'] = $listId;
         }
 
-        return $this->request('POST', '/bookmarks/', body: $body, requiredScope: 'write');
+        return $this->request('POST', '/bookmarks/', body: $body);
     }
 
     public function unbookmark(string $postId): void
     {
         $this->assertPathSegment($postId, 'post ID');
-        $this->request('DELETE', '/bookmarks/' . rawurlencode($postId), requiredScope: 'write');
+        $this->request('DELETE', '/bookmarks/' . rawurlencode($postId));
     }
 
     /**
@@ -176,21 +178,13 @@ final class DailyDevApiClient
         string $path,
         array $query = [],
         ?array $body = null,
-        ?string $requiredScope = 'read',
     ): array {
-        $tokens = $this->oauthFlow->getValidStoredTokens();
-        if ($requiredScope !== null && $tokens->scope !== null) {
-            $grantedScopes = preg_split('/\s+/', trim($tokens->scope), flags: PREG_SPLIT_NO_EMPTY) ?: [];
-            if (!in_array($requiredScope, $grantedScopes, true)) {
-                throw new DailyDevOAuthException(sprintf(
-                    'The saved OAuth token is missing the "%s" scope. Sign in again with that scope enabled.',
-                    $requiredScope,
-                ));
-            }
+        if (trim($this->personalAccessToken) === '') {
+            throw new \RuntimeException('Set DD_TOKEN in .env.local to use the daily.dev API.');
         }
 
         $options = [
-            'auth_bearer' => $tokens->accessToken,
+            'auth_bearer' => $this->personalAccessToken,
             'headers' => ['Accept' => 'application/json'],
         ];
         if ($query !== []) {
