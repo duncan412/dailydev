@@ -14,18 +14,13 @@ Keep the token private and do not commit `.env.local`. The token is sent as a be
 
 ## Reading and bookmarking
 
+Run one interactive command to browse the For You feed:
+
 ```sh
 php bin/console app:daily-dev:feed
 ```
 
-The command prints the For You feed and exits. Use the options shown below to fetch fewer posts, display a post, bookmark it, or remove its bookmark:
-
-```sh
-php bin/console app:daily-dev:feed --limit=10
-php bin/console app:daily-dev:feed --post=POST_ID
-php bin/console app:daily-dev:feed --bookmark=POST_ID
-php bin/console app:daily-dev:feed --unbookmark=POST_ID
-```
+Use ↑/↓ to scroll the feed, Enter to open the selected post's details, `b` to bookmark it, `u` to remove its bookmark, `n` to load the next page, and `q` or Ctrl+C to quit. The selected post's URL is shown in the details pane. Set `--limit=10` to change the number fetched per page.
 
 ## Public API client
 
