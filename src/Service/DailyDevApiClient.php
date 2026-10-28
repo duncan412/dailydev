@@ -74,6 +74,31 @@ final class DailyDevApiClient
     /**
      * @return array<string, mixed>
      */
+    public function searchPosts(
+        string $query,
+        int $limit = 20,
+        ?string $cursor = null,
+        ?string $time = null,
+    ): array {
+        if (trim($query) === '') {
+            throw new \InvalidArgumentException('Search query must not be empty.');
+        }
+
+        if ($time !== null && !in_array($time, ['day', 'week', 'month', 'year', 'all'], true)) {
+            throw new \InvalidArgumentException('Search time must be day, week, month, year or all.');
+        }
+
+        $parameters = ['q' => $query] + $this->pageQuery($limit, $cursor);
+        if ($time !== null) {
+            $parameters['time'] = $time;
+        }
+
+        return $this->get('/search/posts', $parameters);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function byTag(string $tag, int $limit = 20, ?string $cursor = null): array
     {
         $this->assertPathSegment($tag, 'tag');

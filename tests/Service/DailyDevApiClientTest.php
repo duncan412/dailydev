@@ -35,6 +35,58 @@ final class DailyDevApiClientTest extends TestCase
         self::assertSame('next', $response['pagination']['cursor']);
     }
 
+    public function testSearchPostsSendsQueryAndPaginationFilters(): void
+    {
+        $apiClient = new DailyDevApiClient(
+            new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+                self::assertSame('GET', $method);
+                self::assertSame('/public/v1/search/posts', parse_url($url, PHP_URL_PATH));
+                self::assertSame([
+                    'q' => 'php symfony',
+                    'limit' => 10,
+                    'cursor' => 'next-page',
+                    'time' => 'month',
+                ], $options['query']);
+
+                return new MockResponse(
+                    '{"data":[{"id":"post-1","title":"PHP with Symfony"}],"pagination":{"hasNextPage":true,"cursor":"next"}}',
+                );
+            }),
+            'personal-access-token',
+        );
+
+        $response = $apiClient->searchPosts('php symfony', 10, 'next-page', 'month');
+
+        self::assertSame('post-1', $response['data'][0]['id']);
+        self::assertSame('next', $response['pagination']['cursor']);
+    }
+
+    public function testSearchPostsRejectsEmptyQuery(): void
+    {
+        $apiClient = new DailyDevApiClient(
+            new MockHttpClient(static fn (): MockResponse => throw new \LogicException('No API request expected.')),
+            'personal-access-token',
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Search query must not be empty.');
+
+        $apiClient->searchPosts('  ');
+    }
+
+    public function testSearchPostsRejectsUnsupportedTimeFilter(): void
+    {
+        $apiClient = new DailyDevApiClient(
+            new MockHttpClient(static fn (): MockResponse => throw new \LogicException('No API request expected.')),
+            'personal-access-token',
+        );
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Search time must be day, week, month, year or all.');
+
+        $apiClient->searchPosts('php', time: 'decade');
+    }
+
     public function testBookmarkAndUnbookmarkUseWriteEndpoints(): void
     {
         $requests = [];

@@ -14,6 +14,7 @@ use Symfony\Component\Tui\Style\Style;
 use Symfony\Component\Tui\Style\StyleSheet;
 use Symfony\Component\Tui\Tui;
 use Symfony\Component\Tui\Widget\ContainerWidget;
+use Symfony\Component\Tui\Widget\InputWidget;
 use Symfony\Component\Tui\Widget\SelectListWidget;
 use Symfony\Component\Tui\Widget\TextWidget;
 use Symfony\Component\Tui\Widget\Util\StringUtils;
@@ -24,6 +25,8 @@ final class DailyDevReaderTui
     private ContainerWidget $content;
     private TextWidget $status;
     private TextWidget $detail;
+    private TextWidget $feedHeading;
+    private InputWidget $searchInput;
     private SelectListWidget $postList;
 
     /** @var list<array<string, mixed>> */
@@ -35,6 +38,7 @@ final class DailyDevReaderTui
     private ?string $nextCursor = null;
     private bool $hasNextPage = false;
     private int $pageSize = 20;
+    private ?string $searchQuery = null;
 
     public function __construct(private readonly DailyDevApiClient $apiClient)
     {
@@ -78,13 +82,31 @@ final class DailyDevReaderTui
         $listPane = (new ContainerWidget())->addStyleClass('list-pane');
         $detailPane = (new ContainerWidget())->addStyleClass('detail-pane');
         $this->detail = new TextWidget('Select a post and press Enter to open its details.');
+        $this->feedHeading = new TextWidget('For You');
+        $this->searchInput = (new InputWidget())->setPrompt('Search posts (press /): ');
         $this->postList = new SelectListWidget([], 18);
 
-        $listPane->add(new TextWidget('For You'))->add($this->postList);
+        $listPane->add($this->feedHeading)->add($this->searchInput)->add($this->postList);
         $detailPane->add(new TextWidget('Selected post'))->add($this->detail);
         $panes->add($listPane)->add($detailPane);
         $this->content->add($panes);
         $this->tui->setFocus($this->postList);
+
+        $this->searchInput
+            ->onSubmit(function (\Symfony\Component\Tui\Event\SubmitEvent $event): void {
+                if (trim($event->getValue()) === '') {
+                    $this->setStatus('Enter a search term.');
+                    $this->tui->setFocus($this->searchInput);
+
+                    return;
+                }
+
+                $this->searchPosts(trim($event->getValue()));
+            })
+            ->onCancel(function (): void {
+                $this->tui->setFocus($this->postList);
+                $this->setStatus($this->helpText());
+            });
 
         $this->postList
             ->onSelectionChange(function (SelectionChangeEvent $event): void {
@@ -110,26 +132,73 @@ final class DailyDevReaderTui
             }
 
             if (!$append) {
-                $this->posts = [];
+                $this->searchQuery = null;
+                $this->feedHeading->setText('For You');
             }
-            foreach ($pagePosts as $post) {
-                if (is_array($post) && is_string($post['id'] ?? null) && is_string($post['title'] ?? null)) {
-                    $this->posts[] = $post;
-                }
-            }
-
-            $cursor = $pagination['cursor'] ?? null;
-            $this->nextCursor = is_string($cursor) && $cursor !== '' ? $cursor : null;
-            $this->hasNextPage = ($pagination['hasNextPage'] ?? false) === true && $this->nextCursor !== null;
-            $this->updatePostList();
+            $this->applyPage($pagePosts, $pagination, $append);
             $this->setStatus(sprintf(
-                '%d posts%s · ↑/↓ scroll · Enter open · b bookmark · u unbookmark · n next page · q/Ctrl+C quit',
+                '%d posts%s · %s',
                 count($this->posts),
                 $this->hasNextPage ? ' (more available)' : '',
+                $this->helpText(),
             ));
         } catch (\RuntimeException $exception) {
             $this->setStatus($exception->getMessage());
         }
+    }
+
+    private function searchPosts(string $query, bool $append = false): void
+    {
+        try {
+            $response = $this->apiClient->searchPosts(
+                $query,
+                $this->pageSize,
+                $append ? $this->nextCursor : null,
+            );
+            $pagePosts = $response['data'] ?? null;
+            $pagination = $response['pagination'] ?? null;
+            if (!is_array($pagePosts) || !is_array($pagination)) {
+                throw new DailyDevApiException('The daily.dev search response was missing posts or pagination.', 200);
+            }
+
+            if (!$append) {
+                $this->searchQuery = $query;
+                $this->feedHeading->setText('Search: ' . $this->safeText($query));
+            }
+            $this->applyPage($pagePosts, $pagination, $append);
+            if (!$append) {
+                $this->tui->setFocus($this->postList);
+            }
+            $this->setStatus(sprintf(
+                '%d results%s · %s',
+                count($this->posts),
+                $this->hasNextPage ? ' (more available)' : '',
+                $this->helpText(),
+            ));
+        } catch (\RuntimeException $exception) {
+            $this->setStatus($exception->getMessage());
+        }
+    }
+
+    /**
+     * @param array<mixed> $pagePosts
+     * @param array<mixed> $pagination
+     */
+    private function applyPage(array $pagePosts, array $pagination, bool $append): void
+    {
+        if (!$append) {
+            $this->posts = [];
+        }
+        foreach ($pagePosts as $post) {
+            if (is_array($post) && is_string($post['id'] ?? null) && is_string($post['title'] ?? null)) {
+                $this->posts[] = $post;
+            }
+        }
+
+        $cursor = $pagination['cursor'] ?? null;
+        $this->nextCursor = is_string($cursor) && $cursor !== '' ? $cursor : null;
+        $this->hasNextPage = ($pagination['hasNextPage'] ?? false) === true && $this->nextCursor !== null;
+        $this->updatePostList();
     }
 
     private function loadPostDetails(string $postId): void
@@ -204,6 +273,10 @@ final class DailyDevReaderTui
             return;
         }
 
+        if ($this->tui->getFocus() === $this->searchInput) {
+            return;
+        }
+
         switch ($data) {
             case 'q':
                 $this->tui->stop();
@@ -218,14 +291,28 @@ final class DailyDevReaderTui
                 $this->loadNextPage();
                 break;
             case 'r':
-                $this->loadFeed($this->pageSize, append: false);
+                if ($this->searchQuery === null) {
+                    $this->loadFeed($this->pageSize, append: false);
+                } else {
+                    $this->searchPosts($this->searchQuery);
+                }
+                break;
+            case '/':
+                $this->searchInput->setValue('');
+                $this->tui->setFocus($this->searchInput);
+                $this->setStatus('Type a search query and press Enter · Esc returns to the feed');
                 break;
             case "\x1b":
-                $this->setStatus('↑/↓ scroll · Enter open · b bookmark · u unbookmark · n next page · q/Ctrl+C quit');
+                if ($this->searchQuery !== null) {
+                    $this->searchQuery = null;
+                    $this->searchInput->setValue('');
+                    $this->feedHeading->setText('For You');
+                    $this->loadFeed($this->pageSize);
+                }
                 break;
         }
 
-        if (in_array($data, ['q', 'b', 'u', 'n', 'r', "\x1b"], true)) {
+        if (in_array($data, ['q', 'b', 'u', 'n', 'r', '/', "\x1b"], true)) {
             $event->stopPropagation();
         }
     }
@@ -238,7 +325,11 @@ final class DailyDevReaderTui
             return;
         }
 
-        $this->loadFeed($this->pageSize, append: true);
+        if ($this->searchQuery === null) {
+            $this->loadFeed($this->pageSize, append: true);
+        } else {
+            $this->searchPosts($this->searchQuery, append: true);
+        }
     }
 
     private function updatePostList(): void
@@ -363,6 +454,11 @@ final class DailyDevReaderTui
     private function setStatus(string $message): void
     {
         $this->status->setText($this->safeText($message));
+    }
+
+    private function helpText(): string
+    {
+        return '↑/↓ scroll · / search · Enter open · b bookmark · u unbookmark · n next page · q/Ctrl+C quit';
     }
 
     private function safeText(string $text): string

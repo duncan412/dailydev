@@ -48,6 +48,30 @@ final class DailyDevReaderTuiTest extends TestCase
         $tui->stop();
     }
 
+    public function testSlashOpensSearchAndEnterShowsSearchResults(): void
+    {
+        $apiClient = new MockHttpClient(static function (string $method, string $url, array $options): MockResponse {
+            self::assertSame('GET', $method);
+            self::assertSame('/public/v1/search/posts', parse_url($url, PHP_URL_PATH));
+            self::assertSame(['q' => 'php symfony', 'limit' => 20], $options['query']);
+
+            return new MockResponse(
+                '{"data":[{"id":"search-1","title":"PHP Symfony Search","summary":"Search result summary"}],"pagination":{"hasNextPage":false,"cursor":null}}',
+            );
+        });
+        [$reader, $tui, $terminal] = $this->createReader($apiClient);
+
+        $terminal->simulateInput('/');
+        $terminal->simulateInput('php symfony');
+        $terminal->simulateInput("\r");
+
+        $selectedPost = (new \ReflectionProperty(DailyDevReaderTui::class, 'selectedPost'))->getValue($reader);
+        self::assertSame('search-1', $selectedPost['id']);
+        self::assertSame('Search: php symfony', (new \ReflectionProperty(DailyDevReaderTui::class, 'feedHeading'))->getValue($reader)->getText());
+        self::assertSame('php symfony', (new \ReflectionProperty(DailyDevReaderTui::class, 'searchQuery'))->getValue($reader));
+        $tui->stop();
+    }
+
     public function testSelectedPostCanBeBookmarkedAndUnbookmarkedInTheSameSession(): void
     {
         $requests = [];
